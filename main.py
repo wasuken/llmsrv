@@ -42,6 +42,48 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "hf.co/elyza/Llama-3-ELYZA-JP-8B-GGUF:latest")
 
+OLLAMA_PREDICT_LENGTH_DICT = {
+     "s": {
+        "num_predict": 100,
+        "temperature": 0.7,        # より直接的な応答に
+        "top_k": 20,
+        "top_p": 0.7,             # より確実な選択に
+        "repeat_penalty": 1.3,     # 繰り返しを強めに抑制
+        "presence_penalty": 1.2,
+        "frequency_penalty": 1.2
+    },
+    "n": {
+        "num_predict": 250,
+        "temperature": 0.8,
+        "top_k": 20,
+        "top_p": 0.9,
+        "repeat_penalty": 1.2,
+        "presence_penalty": 1.5,
+        "frequency_penalty": 1.0
+    },
+    "l": {
+        "num_predict": 500,
+        "temperature": 0.8,
+        "top_k": 20,
+        "top_p": 0.9,
+        "repeat_penalty": 1.1,     # 長文なので繰り返しペナルティを少し緩める
+        "presence_penalty": 1.8,   # 多様な表現を促す
+        "frequency_penalty": 0.8    # 長文なので若干緩める
+    },
+}
+
+def get_options(text: str) -> int:
+    """
+    テキストからトークン長を取得
+    /s /n /l で長さを切り替え
+    それ以外はデフォルト(100)を返す
+    """
+    default = OLLAMA_PREDICT_LENGTH_DICT["s"]
+    if text.strip().startswith('/'):
+        command = text[1:2]  # /の次の1文字だけ見る
+        return OLLAMA_PREDICT_LENGTH_DICT.get(command, default)
+    return default
+
 @app.post('/')
 async def api_root():
     return {'message': "Healthy"}
@@ -83,12 +125,7 @@ def handle_message(event):
             "model": OLLAMA_MODEL,
             "prompt": f"{system_prompt}\n\nユーザー: {user_message}\nアシスタント: ",
             "stream": False,
-            "options": {
-                "temperature": 0.7,
-                "top_k": 40,
-                "top_p": 0.9,
-                "num_predict": 1000
-            }
+            "options": get_options(user_message)
         }
         
         try:
