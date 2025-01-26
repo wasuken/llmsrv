@@ -1,3 +1,4 @@
+from typing import Dict, TypedDict, Tuple
 from dotenv import load_dotenv
 import requests
 import json
@@ -42,7 +43,16 @@ handler = WebhookHandler(LINE_CHANNEL_SECRET)
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "hf.co/elyza/Llama-3-ELYZA-JP-8B-GGUF:latest")
 
-OLLAMA_PREDICT_LENGTH_DICT = {
+class LLMOptions(TypedDict):
+    num_predict: int
+    temperature: float
+    top_k: int
+    top_p: float
+    repeat_penalty: float
+    presence_penalty: float
+    frequency_penalty: float
+
+OLLAMA_PREDICT_LENGTH_DICT: Dict[str, LLMOptions] = {
      "s": {
         "num_predict": 100,
         "temperature": 0.7,        # より直接的な応答に
@@ -84,6 +94,20 @@ def get_options(text: str) -> int:
         return OLLAMA_PREDICT_LENGTH_DICT.get(command, default)
     return default
 
+def parse_message(text: str) -> Tuple[str, LLMOptions]:
+    """
+    メッセージを解析してコマンドとメッセージ本文を分離
+    戻り値: (クリーンなメッセージ, オプション設定)
+    """
+    options = get_options(text)
+    message = text
+    if text.startswith('/'):
+        command = text[1:2]  # コマンド部分を取得
+        # コマンド部分を除去してメッセージを取得（先頭の空白も除去）
+        message = text[2:].lstrip()
+    
+    return message, options
+
 @app.post('/')
 async def api_root():
     return {'message': "Healthy"}
@@ -113,7 +137,9 @@ def handle_message(event):
     with ApiClient(configuration) as api_clinet:
         line_bot_api = MessagingApi(api_clinet)
 
-        user_message = event.message.text
+        user_plain_message = event.message.text
+        user_message, options = parse_message(user_plain_message)
+        
         
         # システムプロンプトを設定
         system_prompt = """あなたは親しみやすく、でも丁寧な日本語で会話するアシスタントです。
@@ -125,7 +151,7 @@ def handle_message(event):
             "model": OLLAMA_MODEL,
             "prompt": f"{system_prompt}\n\nユーザー: {user_message}\nアシスタント: ",
             "stream": False,
-            "options": get_options(user_message)
+            "options": options,
         }
         
         try:
